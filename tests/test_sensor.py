@@ -1,200 +1,108 @@
-import pytest
-from unittest.mock import MagicMock, patch
 
 import pytest
 from unittest.mock import MagicMock, patch
 
 from homeassistant.core import HomeAssistant
-from homeassistant.const import CONF_API_KEY
-from homeassistant.helpers.entity_component import (
-    async_update_entity,
-)  # For potential future use
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorStateClass,
-)  # Module level import
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.braiins_pool.const import (
+from custom_components.delta_wallbox.const import (
     DOMAIN,
-    CONF_REWARDS_ACCOUNT_NAME,
-    SATOSHIS_PER_BTC,
+    CONF_IP_ADDRESS,
+    CONF_PORT,
+    CONF_SLAVE_ID,
 )
-from custom_components.braiins_pool.sensor import SENSOR_TYPES, BraiinsPoolSensor
-from custom_components.braiins_pool.coordinator import BraiinsDataUpdateCoordinator
+from custom_components.delta_wallbox.coordinator import DeltaWallboxDataUpdateCoordinator
+from custom_components.delta_wallbox.sensor import (
+    SENSOR_TYPES,
+    DeltaWallboxSensor,
+    async_setup_entry,
+)
 
-MOCK_API_KEY = "test_api_key_789"
-MOCK_REWARDS_ACCOUNT_NAME = "My Miner Sensors"
-MOCK_ENTRY_ID = "sensor_entry_1"
-
-
-@pytest.fixture
-def mock_config_entry_data():
-    """Provide mock config entry data."""
-    return {
-        CONF_API_KEY: MOCK_API_KEY,
-        CONF_REWARDS_ACCOUNT_NAME: MOCK_REWARDS_ACCOUNT_NAME,
-    }
+MOCK_SLAVE_ID = 1
+MOCK_ENTRY_ID = "test_entry_id"
 
 
 @pytest.fixture
-def mock_coordinator(hass, mock_config_entry_data):
-    """Mock BraiinsDataUpdateCoordinator."""
-    coordinator = MagicMock(spec=BraiinsDataUpdateCoordinator)
+def mock_coordinator(hass: HomeAssistant):
+    """Mock DeltaWallboxDataUpdateCoordinator."""
+    coordinator = MagicMock(spec=DeltaWallboxDataUpdateCoordinator)
     coordinator.hass = hass
-    coordinator.data = {  # Mock some data for sensors
-        "today_reward": 0.001,
-        "current_balance": 0.05,
-        "all_time_reward": 1.23,
-        "pool_5m_hash_rate": 5000,
-        "ok_workers": 2,
-        "today_reward_satoshi": 100000,  # 0.001 * SATOSHIS_PER_BTC
-        "current_balance_satoshi": 5000000,  # 0.05 * SATOSHIS_PER_BTC
-        "all_time_reward_satoshi": 123000000,  # 1.23 * SATOSHIS_PER_BTC
-    }
-    coordinator.config_entry = MagicMock(spec=ConfigEntry)
-    coordinator.config_entry.data = mock_config_entry_data
-    coordinator.config_entry.entry_id = MOCK_ENTRY_ID
+    coordinator.slave_id = MOCK_SLAVE_ID
+    # Populate with some mock data for all sensors
+    coordinator.data = {desc.key: f"mock_{desc.key}" for desc in SENSOR_TYPES}
+    coordinator.data["charging_power"] = 1500
+    coordinator.data["soc"] = 80.5
+
+    mock_config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id=MOCK_ENTRY_ID,
+        data={
+            CONF_IP_ADDRESS: "1.2.3.4",
+            CONF_PORT: 502,
+            CONF_SLAVE_ID: MOCK_SLAVE_ID,
+        },
+    )
+    coordinator.config_entry = mock_config_entry
     return coordinator
 
 
 @pytest.fixture
-def mock_config_entry_obj(mock_config_entry_data):
-    """Returns a mock ConfigEntry object"""
-    entry = MagicMock(spec=ConfigEntry)
-    entry.data = mock_config_entry_data
-    entry.entry_id = MOCK_ENTRY_ID
-    entry.title = MOCK_REWARDS_ACCOUNT_NAME
-    return entry
-
-
-async def test_sensor_creation_and_device_info(
-    hass: HomeAssistant, mock_coordinator, mock_config_entry_obj
-):
-    """Test sensor creation and device info."""
-
-    # Store coordinator in hass.data as sensor.py expects
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][MOCK_ENTRY_ID] = mock_coordinator
-
-    entities = []
-    async_add_entities_mock = MagicMock(side_effect=lambda x: entities.extend(x))
-
-    # Simulate setup from sensor.py's async_setup_entry
-    # We directly create sensors here for testing their properties
-    sensors_to_create = [
-        BraiinsPoolSensor(mock_coordinator, description, mock_config_entry_obj)
-        for description in SENSOR_TYPES
-    ]
-    async_add_entities_mock(
-        sensors_to_create
-    )  # Call the mock to populate entities list
-
-    assert len(entities) == len(SENSOR_TYPES)
-
-    for entity in entities:
-        assert isinstance(entity, BraiinsPoolSensor)
-        assert entity.coordinator == mock_coordinator
-        assert entity.unique_id == f"{MOCK_ENTRY_ID}_{entity.entity_description.key}"
-
-        # Check device_info
-        device_info = entity.device_info
-        assert device_info is not None
-        assert device_info["identifiers"] == {(DOMAIN, MOCK_ENTRY_ID)}
-        assert device_info["name"] == MOCK_REWARDS_ACCOUNT_NAME
-        assert device_info["manufacturer"] == "Braiins"
-
-        # Check native value
-        assert entity.native_value == mock_coordinator.data.get(
-            entity.entity_description.key
-        )
-
-
-async def test_sensor_keyerror_fix(
-    hass: HomeAssistant, mock_coordinator, mock_config_entry_obj
-):
-    """Test that the KeyError during setup is fixed.
-    This is implicitly tested by test_sensor_creation_and_device_info
-    if it runs without a KeyError. This test explicitly calls the setup
-    function that was failing.
-    """
-    from custom_components.braiins_pool.sensor import (
-        async_setup_entry as sensor_async_setup_entry,
+def mock_config_entry_obj() -> MockConfigEntry:
+    """Return a mock ConfigEntry object."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        entry_id=MOCK_ENTRY_ID,
+        data={
+            CONF_IP_ADDRESS: "1.2.3.4",
+            CONF_PORT: 502,
+            CONF_SLAVE_ID: MOCK_SLAVE_ID,
+        },
+        title="Delta Wallbox",
     )
 
+
+async def test_async_setup_entry(
+    hass: HomeAssistant, mock_coordinator, mock_config_entry_obj: MockConfigEntry
+):
+    """Test the sensor platform setup."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][
-        mock_config_entry_obj.entry_id
-    ] = mock_coordinator  # Ensure coordinator is there
+    hass.data[DOMAIN][mock_config_entry_obj.entry_id] = mock_coordinator
 
     async_add_entities_mock = MagicMock()
 
-    try:
-        await sensor_async_setup_entry(
-            hass, mock_config_entry_obj, async_add_entities_mock
-        )
-    except KeyError as e:
-        pytest.fail(f"KeyError should not occur: {e}")
+    await async_setup_entry(hass, mock_config_entry_obj, async_add_entities_mock)
 
     async_add_entities_mock.assert_called_once()
-    # Further assertions can be made on the entities passed to async_add_entities_mock if needed
+    entities = async_add_entities_mock.call_args.args[0]
+    assert len(entities) == len(SENSOR_TYPES)
+    assert all(isinstance(e, DeltaWallboxSensor) for e in entities)
 
 
-@pytest.mark.usefixtures()
-def test_sensor_types_attributes():
-    """Test the attributes of SENSOR_TYPES, including new Satoshi sensors."""
-    # SensorDeviceClass and SensorStateClass are now imported at module level
+async def test_sensor_properties(hass: HomeAssistant, mock_coordinator):
+    """Test properties of a DeltaWallboxSensor."""
+    # Test a representative sensor
+    description = next(d for d in SENSOR_TYPES if d.key == "charger_state")
 
-    monetary_btc_sensors = ["today_reward", "current_balance", "all_time_reward"]
-    monetary_satoshi_sensors = [
-        "today_reward_satoshi",
-        "current_balance_satoshi",
-        "all_time_reward_satoshi",
-    ]
+    sensor = DeltaWallboxSensor(mock_coordinator, description)
+    sensor.hass = hass
 
-    for description in SENSOR_TYPES:
-        if description.key in monetary_btc_sensors:
-            assert (
-                description.device_class == SensorDeviceClass.MONETARY
-            ), f"Sensor {description.key} should have MONETARY device class"
-            assert (
-                description.state_class == SensorStateClass.TOTAL
-            ), f"Sensor {description.key} should have TOTAL state class"
-            assert (
-                description.native_unit_of_measurement == "BTC"
-            ), f"Sensor {description.key} should have BTC unit"
-        elif description.key in monetary_satoshi_sensors:
-            assert (
-                description.device_class == SensorDeviceClass.MONETARY
-            ), f"Sensor {description.key} should have MONETARY device class"
-            assert (
-                description.state_class == SensorStateClass.TOTAL
-            ), f"Sensor {description.key} should have TOTAL state class"
-            assert (
-                description.native_unit_of_measurement == "Satoshi"
-            ), f"Sensor {description.key} should have Satoshi unit"
-        elif description.key == "pool_5m_hash_rate":
-            assert (
-                description.device_class == SensorDeviceClass.DATA_RATE
-            ), f"Sensor {description.key} should have DATA_RATE device class"
-            assert (
-                description.state_class == SensorStateClass.MEASUREMENT
-            ), f"Sensor {description.key} should have MEASUREMENT state class"
-        elif description.key == "ok_workers":
-            assert (
-                description.state_class == SensorStateClass.MEASUREMENT
-            ), f"Sensor {description.key} should have MEASUREMENT state class"
-            # Assuming no specific device_class for ok_workers
-            assert (
-                description.device_class is None
-            ), f"Sensor {description.key} should have None device class"
-        else:
-            # General assertion for any other sensors if they shouldn't be MONETARY/TOTAL
-            if description.device_class:  # only assert if device_class is not None
-                assert (
-                    description.device_class != SensorDeviceClass.MONETARY
-                ), f"Sensor {description.key} should not have MONETARY device class unless specified"
-            if description.state_class:  # only assert if state_class is not None
-                assert (
-                    description.state_class != SensorStateClass.TOTAL
-                ), f"Sensor {description.key} should not have TOTAL state class unless specified"
+    # Test basic properties
+    assert sensor.coordinator == mock_coordinator
+    assert sensor.entity_description == description
+    assert sensor.unique_id == f"{MOCK_SLAVE_ID}_{description.key}"
+
+    # Test device info
+    device_info = sensor.device_info
+    assert device_info is not None
+    assert device_info["identifiers"] == {(DOMAIN, MOCK_SLAVE_ID)}
+    assert device_info["name"] == "Delta Wallbox"
+    assert device_info["manufacturer"] == "Delta"
+
+    # Test value property
+    assert sensor.native_value == mock_coordinator.data.get(description.key)
+
+    # Test another sensor with specific data
+    power_desc = next(d for d in SENSOR_TYPES if d.key == "charging_power")
+    power_sensor = DeltaWallboxSensor(mock_coordinator, power_desc)
+    assert power_sensor.native_value == 1500

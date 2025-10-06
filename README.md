@@ -1,48 +1,52 @@
-# Braiins Pool Home Assistant Integration
+# Delta Wallbox Home Assistant Integration
 
-Monitor your Braiins Pool mining statistics directly within Home Assistant. 
+Integrate your Delta Wallbox with Home Assistant to monitor and control your EV charging.
 
 ## Setup
 
-1.  **Obtain your API key for the Braiins Pool API.**\
-    Follow the instructions in the Braiins Pool API documentation: [https://academy.braiins.com/en/braiins-pool/monitoring/#overview](https://academy.braiins.com/en/braiins-pool/monitoring/#overview)
-1.  **Install the Integration.**\
-    This integration is available through HACS (Home Assistant Community Store). Click the following button to add it to your Home Assistant: \
-    [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=braiins_pool)\
-    \
-    Alternatively add it manually with the following steps:
-    1.  **Add this repository as a Custom Repository in HACS.**
-        *   In HACS, go to the Integrations tab.
-        *   Click on the three dots in the top right corner and select `Custom repositories`.
-        *   Enter the URL of this repository (`https://github.com/fischerq/ha-braiins-pool/`) and select the category `Integration`.
-        *   Click `Add`.
-    1.  **Install the integration.**
-        *   Search for "Braiins Pool" in the HACS Integrations tab.
-        *   Click "Download" and restart Home Assistant.
-1.  **Add the Braiins Pool integration.**
+1.  **Install the Integration.**
+    This integration is not yet available in HACS. To install it, you will need to manually copy the `custom_components/delta_wallbox` directory to the `custom_components` directory of your Home Assistant installation.
+2.  **Add the Delta Wallbox integration.**
     *   Go to Settings -> Devices & Services -> Add Integration.
-    *   Search for Braiins Pool` and select it.
-    *   Enter your Braiins Pool API Key when prompted. Also enter the name of your Braiins Pool Reward Account (for display, not used for anything else yet).
+    *   Search for "Delta Wallbox" and select it.
+    *   Enter the IP address, port, and slave ID of your Delta Wallbox when prompted.
 
 ## Provided Entities
 
-This integration will create sensors for:
+This integration will create the following entities:
 
-*   `today_reward`: Braiins Pool Today's Reward
-    *   Also available as `today_reward_satoshi`: Braiins Pool Today's Reward Satoshi
-*   `current_balance`: Braiins Pool Current Balance
-    *   Also available as `current_balance_satoshi`: Braiins Pool Current Balance Satoshi
-*   `all_time_reward`: Braiins Pool All Time Reward
-    *   Also available as `all_time_reward_satoshi`: Braiins Pool All Time Reward Satoshi
-*   `pool_5m_hash_rate`: Braiins Pool 5m Hash Rate
-*   `ok_workers`: Braiins Pool Active Workers
+*   **Sensors:**
+    *   Charger State
+    *   EVSE Count
+    *   Serial Number
+    *   Model
+    *   EVSE State
+    *   EV Connected
+    *   Charging Time
+    *   Charging Power
+    *   Charged Energy
+    *   State of Charge
+    *   EV Max Power
+    *   EV Min Power
+    *   Phase 1 Voltage
+    *   Phase 2 Voltage
+    *   Phase 3 Voltage
+    *   Phase 1 Current
+    *   Phase 2 Current
+    *   Phase 3 Current
+    *   Grid Frequency
+    *   Grid Total Power Consumption
+    *   Grid Phase 1 Power
+    *   Grid Phase 2 Power
+    *   Grid Phase 3 Power
+    *   Error Code
+*   **Number:**
+    *   Power Limit
+*   **Switch:**
+    *   Charging
 
 ## Implementation
 
-Interaction with the Braiins Pool API is implemented in `api.py`.
+Interaction with the Delta Wallbox is implemented using Modbus TCP. The `pymodbus` library is used to communicate with the wallbox.
 
-Sensors are populated by parsing the [User Profile API](https://academy.braiins.com/en/braiins-pool/monitoring/#user-profile-api) endpoint.
-
-Fetching or parsing the other API endpoints is not implemented yet. Feel free to contribute if you need it.
-
- Providing the data to Home Assistant in the correct format is implemented in `coordinator.py` and `sensor.py`. `config_flow.py` holds the configuration dialog.
+The data is fetched periodically by the `coordinator.py` and provided to the entities in `sensor.py`, `number.py`, and `switch.py`. The configuration dialog is implemented in `config_flow.py`.
