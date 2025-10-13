@@ -62,7 +62,7 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Read all registers in one go to minimize traffic
             result = await self.client.read_input_registers(
-                address=0, count=130, unit=self.slave_id
+                address=0, count=130, slave=self.slave_id
             )
             if result.isError():
                 raise UpdateFailed(f"Modbus error: {result}")
