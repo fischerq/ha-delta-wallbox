@@ -56,6 +56,12 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _read_register(self, address, count=1):
         """Read a register from the modbus device."""
+        _LOGGER.debug(
+            "Reading %d registers from address %d (device_id: %d)",
+            count,
+            address,
+            self.slave_id,
+        )
         result = await self.client.read_input_registers(
             address=address, count=count, device_id=self.slave_id
         )

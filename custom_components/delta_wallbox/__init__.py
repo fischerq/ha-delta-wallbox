@@ -18,6 +18,10 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Delta Wallbox from a config entry."""
+    _LOGGER.info(
+        "Setting up Delta Wallbox with config: %s",
+        entry.data,
+    )
     hass.data.setdefault(DOMAIN, {})
 
     client = ModbusTcpClient(
