@@ -35,7 +35,7 @@ async def test_successful_update(hass: HomeAssistant, mock_modbus_client):
     ] + [0] * (20 - len("TEST_SERIAL_NUMBER"))
     mock_registers[REG_EVSE_STATE] = 5  # EVSE State: Charging
 
-    async def mock_read_input_registers(address, count, slave):
+    async def mock_read_input_registers(address, count, unit):
         response = MagicMock()
         response.isError.return_value = False
         response.registers = mock_registers[address : address + count]
@@ -59,7 +59,7 @@ async def test_update_modbus_error(hass: HomeAssistant, mock_modbus_client):
     error_response = MagicMock()
     error_response.isError.return_value = True
 
-    async def mock_read_input_registers(address, count, slave):
+    async def mock_read_input_registers(address, count, unit):
         return error_response
 
     mock_modbus_client.read_input_registers = AsyncMock(

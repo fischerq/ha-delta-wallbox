@@ -57,7 +57,7 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
     async def _read_register(self, address, count=1):
         """Read a register from the modbus device."""
         result = await self.client.read_input_registers(
-            address=address, count=count, slave=self.slave_id
+            address=address, count=count, unit=self.slave_id
         )
         if result.isError():
             raise UpdateFailed(f"Modbus error reading address {address}: {result}")
