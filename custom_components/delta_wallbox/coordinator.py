@@ -62,37 +62,44 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
             address,
             self.slave_id,
         )
-        result = await self.client.read_input_registers(
-            address=address, count=count, device_id=self.slave_id
-        )
-        if result.isError():
-            raise UpdateFailed(f"Modbus error reading address {address}: {result}")
-        return result.registers
+        try:
+            result = await self.client.read_input_registers(
+                address=address - 1, count=count, device_id=self.slave_id
+            )
+            if result.isError():
+                _LOGGER.warning(
+                    "Modbus error reading address %d: %s", address, result
+                )
+                return None
+            return result.registers
+        except Exception as ex:
+            _LOGGER.warning("Error reading address %d: %s", address, ex)
+            return None
 
     async def _read_u16(self, register):
         """Read a 16-bit unsigned integer from a register."""
         regs = await self._read_register(register, 1)
-        return regs[0]
+        return regs[0] if regs else 0
 
     async def _read_u32(self, register):
         """Read a 32-bit unsigned integer from two registers."""
         regs = await self._read_register(register, 2)
-        return self._decode_u32(regs)
+        return self._decode_u32(regs) if regs else 0
 
     async def _read_u64(self, register):
         """Read a 64-bit unsigned integer from four registers."""
         regs = await self._read_register(register, 4)
-        return self._decode_u64(regs)
+        return self._decode_u64(regs) if regs else 0
 
     async def _read_f32(self, register):
         """Read a 32-bit float from two registers."""
         regs = await self._read_register(register, 2)
-        return self._decode_f32(regs)
+        return self._decode_f32(regs) if regs else 0.0
 
     async def _read_string(self, register, count):
         """Read a string from a number of registers."""
         regs = await self._read_register(register, count)
-        return "".join([chr(c) for c in regs if c != 0])
+        return "".join([chr(c) for c in regs if c != 0]) if regs else ""
 
     async def _async_update_data(self):
         """Fetch data from the charger."""
