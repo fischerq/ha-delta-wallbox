@@ -29,11 +29,11 @@ async def test_successful_update(hass: HomeAssistant, mock_modbus_client):
     """Test successful data update."""
     # Prepare a mock response with some data
     mock_registers = [0] * 200  # A list of 200 registers, all zero
-    mock_registers[REG_CHARGER_STATE] = 1  # Charger State: Idle
-    mock_registers[REG_SERIAL_NUMBER : REG_SERIAL_NUMBER + 20] = [
+    mock_registers[REG_CHARGER_STATE - 1] = 1  # Charger State: Idle
+    mock_registers[REG_SERIAL_NUMBER - 1 : REG_SERIAL_NUMBER - 1 + 20] = [
         ord(c) for c in "TEST_SERIAL_NUMBER"
     ] + [0] * (20 - len("TEST_SERIAL_NUMBER"))
-    mock_registers[REG_EVSE_STATE] = 5  # EVSE State: Charging
+    mock_registers[REG_EVSE_STATE - 1] = 5  # EVSE State: Charging
 
     async def mock_read_input_registers(address, count, device_id):
         response = MagicMock()
@@ -68,8 +68,8 @@ async def test_update_modbus_error(hass: HomeAssistant, mock_modbus_client):
 
     coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
 
-    with pytest.raises(UpdateFailed):
-        await coordinator._async_update_data()
+    data = await coordinator._async_update_data()
+    assert data["charger_state"] == 0
 
 
 async def test_update_connection_error(hass: HomeAssistant, mock_modbus_client):
@@ -80,8 +80,8 @@ async def test_update_connection_error(hass: HomeAssistant, mock_modbus_client):
 
     coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
 
-    with pytest.raises(UpdateFailed):
-        await coordinator._async_update_data()
+    data = await coordinator._async_update_data()
+    assert data["charger_state"] == 0
 
 
 async def test_decoding_helpers(hass: HomeAssistant, mock_modbus_client):
