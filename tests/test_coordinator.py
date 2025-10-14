@@ -1,16 +1,19 @@
-
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ConnectionException, ModbusIOException
-from pymodbus.pdu import ModbusResponse
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.delta_wallbox.coordinator import (
     DeltaWallboxDataUpdateCoordinator,
+)
+from custom_components.delta_wallbox.const import (
+    REG_CHARGER_STATE,
+    REG_SERIAL_NUMBER,
+    REG_EVSE_STATE,
 )
 
 
@@ -22,47 +25,46 @@ def mock_modbus_client():
     return client
 
 
-class MockModbusResponse(ModbusResponse):
-    def __init__(self, registers):
-        self.registers = registers
-
-    def isError(self):
-        return False
-
-    def get_register(self, address, count=1):
-        if count == 1:
-            return self.registers[address]
-        return self.registers[address : address + count]
-
-    def get_registers(self, address, count):
-        return self.registers[address : address + count]
-
-
 async def test_successful_update(hass: HomeAssistant, mock_modbus_client):
     """Test successful data update."""
     # Prepare a mock response with some data
     mock_registers = [0] * 200  # A list of 200 registers, all zero
-    mock_registers[1] = 1  # Charger State: Idle
-    mock_registers[10:30] = [ord(c) for c in "TEST_SERIAL_NUMBER"] + [0] * (20 - len("TEST_SERIAL_NUMBER"))
-    mock_registers[110] = 5 # EVSE State: Charging
+    mock_registers[REG_CHARGER_STATE] = 1  # Charger State: Idle
+    mock_registers[REG_SERIAL_NUMBER : REG_SERIAL_NUMBER + 20] = [
+        ord(c) for c in "TEST_SERIAL_NUMBER"
+    ] + [0] * (20 - len("TEST_SERIAL_NUMBER"))
+    mock_registers[REG_EVSE_STATE] = 5  # EVSE State: Charging
 
-    mock_response = MockModbusResponse(mock_registers)
-    mock_modbus_client.read_input_registers.return_value = mock_response
+    async def mock_read_input_registers(address, count, slave):
+        response = MagicMock()
+        response.isError.return_value = False
+        response.registers = mock_registers[address : address + count]
+        return response
+
+    mock_modbus_client.read_input_registers = AsyncMock(
+        side_effect=mock_read_input_registers
+    )
 
     coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
 
-    await coordinator._async_update_data()
+    data = await coordinator._async_update_data()
 
-    assert coordinator.data["charger_state"] == 1
-    assert coordinator.data["serial_number"] == "TEST_SERIAL_NUMBER"
-    assert coordinator.data["evse_state"] == 5
+    assert data["charger_state"] == 1
+    assert data["serial_number"] == "TEST_SERIAL_NUMBER"
+    assert data["evse_state"] == 5
 
 
 async def test_update_modbus_error(hass: HomeAssistant, mock_modbus_client):
     """Test data update failure due to Modbus error."""
-    error_response = MagicMock(spec=ModbusResponse)
+    error_response = MagicMock()
     error_response.isError.return_value = True
-    mock_modbus_client.read_input_registers.return_value = error_response
+
+    async def mock_read_input_registers(address, count, slave):
+        return error_response
+
+    mock_modbus_client.read_input_registers = AsyncMock(
+        side_effect=mock_read_input_registers
+    )
 
     coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
 
@@ -81,6 +83,7 @@ async def test_update_connection_error(hass: HomeAssistant, mock_modbus_client):
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
 
+
 async def test_decoding_helpers(hass: HomeAssistant, mock_modbus_client):
     """Test the data decoding helper functions."""
     coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
@@ -89,7 +92,10 @@ async def test_decoding_helpers(hass: HomeAssistant, mock_modbus_client):
     assert coordinator._decode_u32([0x0001, 0x0002]) == 65538
 
     # Test u64 decoding
-    assert coordinator._decode_u64([0x0001, 0x0002, 0x0003, 0x0004]) == 281479271743492
+    assert (
+        coordinator._decode_u64([0x0001, 0x0002, 0x0003, 0x0004])
+        == 281483566841860
+    )
 
     # Test f32 decoding (IEEE 754 float)
     # Value for 1.0 is 0x3f800000 -> registers [0x3f80, 0x0000]
