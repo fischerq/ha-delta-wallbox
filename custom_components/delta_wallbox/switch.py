@@ -25,16 +25,22 @@ SWITCH_TYPES: tuple[SwitchEntityDescription, ...] = (
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up the switch platform."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        DeltaWallboxSwitch(coordinator, description) for description in SWITCH_TYPES
-    ]
-    async_add_entities(entities)
+    if coordinator.data.get("charger_state") is not None:
+        entities = [
+            DeltaWallboxSwitch(coordinator, description)
+            for description in SWITCH_TYPES
+        ]
+        async_add_entities(entities)
 
 
 class DeltaWallboxSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of a Delta Wallbox switch."""
 
-    def __init__(self, coordinator: DeltaWallboxDataUpdateCoordinator, description: SwitchEntityDescription):
+    def __init__(
+        self,
+        coordinator: DeltaWallboxDataUpdateCoordinator,
+        description: SwitchEntityDescription,
+    ):
         """Initialize the switch."""
         super().__init__(coordinator)
         self.entity_description = description
@@ -48,14 +54,17 @@ class DeltaWallboxSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the switch is on."""
-        return self.coordinator.data.get("charging_power", 0) > 0
+        return self.coordinator.data.get("charger_state") == 2
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the switch on."""
         client = self.coordinator.client
         try:
             await self.hass.async_add_executor_job(
-                client.write_register, REG_START_STOP_CHARGING, 1, unit=self.coordinator.slave_id
+                client.write_register,
+                REG_START_STOP_CHARGING,
+                1,
+                unit=self.coordinator.slave_id,
             )
             await self.coordinator.async_request_refresh()
         except Exception as e:
@@ -66,7 +75,10 @@ class DeltaWallboxSwitch(CoordinatorEntity, SwitchEntity):
         client = self.coordinator.client
         try:
             await self.hass.async_add_executor_job(
-                client.write_register, REG_START_STOP_CHARGING, 0, unit=self.coordinator.slave_id
+                client.write_register,
+                REG_START_STOP_CHARGING,
+                0,
+                unit=self.coordinator.slave_id,
             )
             await self.coordinator.async_request_refresh()
         except Exception as e:
