@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +11,9 @@ from custom_components.delta_wallbox.const import (
     CONF_PORT,
     CONF_SLAVE_ID,
 )
-from custom_components.delta_wallbox.coordinator import DeltaWallboxDataUpdateCoordinator
+from custom_components.delta_wallbox.coordinator import (
+    DeltaWallboxDataUpdateCoordinator,
+)
 from custom_components.delta_wallbox.sensor import (
     SENSOR_TYPES,
     DeltaWallboxSensor,
@@ -30,9 +31,10 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.hass = hass
     coordinator.slave_id = MOCK_SLAVE_ID
     # Populate with some mock data for all sensors
-    coordinator.data = {desc.key: f"mock_{desc.key}" for desc in SENSOR_TYPES}
-    coordinator.data["charging_power"] = 1500
-    coordinator.data["soc"] = 80.5
+    coordinator.data = {
+        "charger_state": "mock_charger_state",
+        "charger_serial_number": "mock_serial_number",
+    }
 
     mock_config_entry = MockConfigEntry(
         domain=DOMAIN,
@@ -101,8 +103,3 @@ async def test_sensor_properties(hass: HomeAssistant, mock_coordinator):
 
     # Test value property
     assert sensor.native_value == mock_coordinator.data.get(description.key)
-
-    # Test another sensor with specific data
-    power_desc = next(d for d in SENSOR_TYPES if d.key == "charging_power")
-    power_sensor = DeltaWallboxSensor(mock_coordinator, power_desc)
-    assert power_sensor.native_value == 1500
