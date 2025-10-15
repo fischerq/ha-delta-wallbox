@@ -99,3 +99,24 @@ async def test_decoding_helpers(hass: HomeAssistant, mock_modbus_client):
     # Test f32 decoding (IEEE 754 float)
     # Value for 1.0 is 0x3f800000 -> registers [0x3f80, 0x0000]
     assert coordinator._decode_f32([0x3F80, 0x0000]) == 1.0
+
+
+async def test_read_string(hass: HomeAssistant, mock_modbus_client):
+    """Test the read_string helper function."""
+    coordinator = DeltaWallboxDataUpdateCoordinator(hass, mock_modbus_client, 1)
+
+    # Prepare a mock response with a null-terminated string
+    mock_registers = [ord(c) for c in "TEST"] + [0] + [ord(c) for c in "EXTRA"]
+
+    async def mock_read_input_registers(address, count, device_id):
+        response = MagicMock()
+        response.isError.return_value = False
+        response.registers = mock_registers
+        return response
+
+    mock_modbus_client.read_input_registers = AsyncMock(
+        side_effect=mock_read_input_registers
+    )
+
+    result = await coordinator._read_string(1, 20)
+    assert result == "TEST"

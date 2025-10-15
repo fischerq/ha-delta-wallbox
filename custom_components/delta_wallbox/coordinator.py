@@ -1,6 +1,7 @@
 """Data update coordinator for the Delta Wallbox integration."""
 import logging
 from datetime import timedelta
+from itertools import takewhile
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -73,7 +74,9 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
     async def _read_string(self, register, max_count):
         """Read a string from a number of registers."""
         regs = await self._read_register(register, max_count)
-        return "".join([chr(c) for c in regs if c != 0]) if regs else ""
+        if not regs:
+            return ""
+        return "".join(map(chr, takewhile(lambda x: x != 0, regs)))
 
     async def _async_update_data(self):
         """Fetch data from the charger."""
