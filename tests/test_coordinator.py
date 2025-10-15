@@ -50,7 +50,7 @@ async def test_successful_update(hass: HomeAssistant, mock_modbus_client):
     data = await coordinator._async_update_data()
 
     assert data["charger_state"] == 1
-    assert data["serial_number"] == "TEST_SERIAL_NUMBER"
+    assert data["charger_serial_number"] == "TEST_SERIAL_NUMBER"
 
 
 async def test_update_modbus_error(hass: HomeAssistant, mock_modbus_client):
@@ -111,12 +111,12 @@ async def test_read_string(hass: HomeAssistant, mock_modbus_client):
     async def mock_read_input_registers(address, count, device_id):
         response = MagicMock()
         response.isError.return_value = False
-        response.registers = mock_registers
+        response.registers = [mock_registers[address + 1]]
         return response
 
     mock_modbus_client.read_input_registers = AsyncMock(
         side_effect=mock_read_input_registers
     )
 
-    result = await coordinator._read_string(1, 20)
+    result = await coordinator._read_string(0, 20)
     assert result == "TEST"

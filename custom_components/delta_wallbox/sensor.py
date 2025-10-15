@@ -34,7 +34,7 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     #     entity_category=EntityCategory.DIAGNOSTIC,
     # ),
     SensorEntityDescription(
-        key="serial_number",
+        key="charger_serial_number",
         name="Serial Number",
         icon="mdi:pound",
         entity_category=EntityCategory.DIAGNOSTIC,

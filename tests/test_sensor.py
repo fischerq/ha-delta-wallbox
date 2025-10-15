@@ -33,7 +33,7 @@ def mock_coordinator(hass: HomeAssistant):
     # Populate with some mock data for all sensors
     coordinator.data = {
         "charger_state": "mock_charger_state",
-        "serial_number": "mock_serial_number",
+        "charger_serial_number": "mock_serial_number",
     }
 
     mock_config_entry = MockConfigEntry(

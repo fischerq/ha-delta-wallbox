@@ -1,7 +1,6 @@
 """Data update coordinator for the Delta Wallbox integration."""
 import logging
 from datetime import timedelta
-from itertools import takewhile
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -73,10 +72,13 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _read_string(self, register, max_count):
         """Read a string from a number of registers."""
-        regs = await self._read_register(register, max_count)
-        if not regs:
-            return ""
-        return "".join(map(chr, takewhile(lambda x: x != 0, regs)))
+        result = ""
+        for i in range(max_count):
+            regs = await self._read_register(register + i, 1)
+            if not regs or regs[0] == 0:
+                break
+            result += chr(regs[0])
+        return result
 
     async def _async_update_data(self):
         """Fetch data from the charger."""
@@ -89,10 +91,10 @@ class DeltaWallboxDataUpdateCoordinator(DataUpdateCoordinator):
         # Charger-Level Sensors
         data["charger_state"] = await self._read_u16(REG_CHARGER_STATE)
         _LOGGER.debug(f"Charger state: {data['charger_state']}")
-        data["serial_number"] = await self._read_string(
+        data["charger_serial_number"] = await self._read_string(
             REG_CHARGER_SERIAL_NUMBER, 20
         )
-        _LOGGER.debug(f"Serial number: {data['serial_number']}")
+        _LOGGER.debug(f"Serial number: {data['charger_serial_number']}")
 
         _LOGGER.debug(f"Returning data: {data}")
         return data
