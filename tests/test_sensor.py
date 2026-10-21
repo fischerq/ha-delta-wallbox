@@ -30,6 +30,7 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator = MagicMock(spec=DeltaWallboxDataUpdateCoordinator)
     coordinator.hass = hass
     coordinator.slave_id = MOCK_SLAVE_ID
+    coordinator.serial_number = "mock_serial_number"
     # Populate with some mock data for all sensors
     coordinator.data = {
         "charger_state": "mock_charger_state",
@@ -76,7 +77,7 @@ async def test_async_setup_entry(
     await async_setup_entry(hass, mock_config_entry_obj, async_add_entities_mock)
 
     async_add_entities_mock.assert_called_once()
-    entities = async_add_entities_mock.call_args.args[0]
+    entities = list(async_add_entities_mock.call_args.args[0])
     assert len(entities) == len(SENSOR_TYPES)
     assert all(isinstance(e, DeltaWallboxSensor) for e in entities)
 

@@ -5,7 +5,7 @@ Integrate your Delta Wallbox with Home Assistant to monitor and control your EV 
 ## Setup
 
 1.  **Install the Integration.**
-    This integration is not yet available in HACS. To install it, you will need to manually copy the `custom_components/delta_wallbox` directory to the `custom_components` directory of your Home Assistant installation.
+    Add `https://github.com/fischerq/ha-delta-wallbox` as a custom repository in HACS (category Integration), or manually copy the `custom_components/delta_wallbox` directory to the `custom_components` directory of your Home Assistant installation.
 2.  **Add the Delta Wallbox integration.**
     *   Go to Settings -> Devices & Services -> Add Integration.
     *   Search for "Delta Wallbox" and select it.
@@ -13,37 +13,42 @@ Integrate your Delta Wallbox with Home Assistant to monitor and control your EV 
 
 ## Provided Entities
 
-This integration will create the following entities:
+Read every 30 s from EVSE 1:
 
-*   **Sensors:**
-    *   Charger State
-    *   EVSE Count
-    *   Serial Number
-    *   Model
-    *   EVSE State
-    *   EV Connected
-    *   Charging Time
-    *   Charging Power
-    *   Charged Energy
-    *   State of Charge
-    *   EV Max Power
-    *   EV Min Power
-    *   Phase 1 Voltage
-    *   Phase 2 Voltage
-    *   Phase 3 Voltage
-    *   Phase 1 Current
-    *   Phase 2 Current
-    *   Phase 3 Current
-    *   Grid Frequency
-    *   Grid Total Power Consumption
-    *   Grid Phase 1 Power
-    *   Grid Phase 2 Power
-    *   Grid Phase 3 Power
-    *   Error Code
-*   **Number:**
-    *   Power Limit
-*   **Switch:**
-    *   Charging
+*   **Sensors:** Charger State, Charge State, Charging Power (W), Session Energy (Wh), Output Voltage, Output Current, Charging Time, Serial Number
+*   **Number:** Charging Power Limit (W). It is written to holding register 1600 and read back on every poll.
+*   **Switch:** Charging Enabled. Off suspends charging (register 1602) and keeps the cable locked; on resumes.
+
+The entities are named `…delta_wallbox_charging_power`, `…delta_wallbox_charging_power_limit` and so on.
+
+## Register map and verification
+
+The addresses come from Delta's EVCS Modbus register table, as documented
+for the AC MAX at <https://taphome.com/en/compatibility/delta-ac-max/>.
+EVSE 1 registers are base + 1000: input 1001 charge state, 1005 power,
+1019 session energy; holding 1600 power limit, 1602 suspend.
+
+Check them on your unit before relying on the controls. Run the read-only
+probe and compare with the wallbox app:
+
+```bash
+pip install "pymodbus>=3.10"
+python3 scripts/probe.py 192.168.25.199 --device-id 1
+```
+
+If every value looks shifted by one register, set `REGISTER_OFFSET` in
+`const.py` (some RS485 bridges use 1-based addresses).
+
+## Development
+
+```bash
+pip install -r requirements.txt
+pytest tests && black --check .
+```
+
+The tests run the real client against an in-memory Modbus fake
+(`tests/fake_modbus.py`), including the full Home Assistant setup and
+service calls.
 
 ## Implementation
 

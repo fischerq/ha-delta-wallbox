@@ -1,23 +1,20 @@
 """Switch platform for the Delta Wallbox integration."""
+
 from __future__ import annotations
 
-import logging
-
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, REG_START_STOP_CHARGING
+from .const import DOMAIN
 from .coordinator import DeltaWallboxDataUpdateCoordinator
-
-_LOGGER = logging.getLogger(__name__)
+from .entity import device_info
 
 SWITCH_TYPES: tuple[SwitchEntityDescription, ...] = (
     SwitchEntityDescription(
-        key="charging",
-        name="Charging",
+        key="charging_enabled",
+        name="Charging Enabled",
         icon="mdi:flash",
-        entity_category=EntityCategory.CONFIG,
     ),
 )
 
@@ -25,16 +22,16 @@ SWITCH_TYPES: tuple[SwitchEntityDescription, ...] = (
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up the switch platform."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    if coordinator.data.get("charger_state") is not None:
-        entities = [
-            DeltaWallboxSwitch(coordinator, description)
-            for description in SWITCH_TYPES
-        ]
-        async_add_entities(entities)
+    async_add_entities(
+        DeltaWallboxSwitch(coordinator, description) for description in SWITCH_TYPES
+    )
 
 
 class DeltaWallboxSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of a Delta Wallbox switch."""
+    """On = charging allowed; off = suspended (holding register 1602).
+
+    Suspending keeps the cable locked; the car resumes when switched on.
+    """
 
     def __init__(
         self,
@@ -43,43 +40,30 @@ class DeltaWallboxSwitch(CoordinatorEntity, SwitchEntity):
     ):
         """Initialize the switch."""
         super().__init__(coordinator)
+        self._attr_has_entity_name = True
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.slave_id}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.slave_id)},
-            "name": "Delta Wallbox",
-            "manufacturer": "Delta",
-        }
+        self._attr_device_info = device_info(coordinator)
 
     @property
-    def is_on(self) -> bool:
-        """Return true if the switch is on."""
-        return self.coordinator.data.get("charger_state") == 2
+    def is_on(self) -> bool | None:
+        """Return true unless the charger reports it is suspended."""
+        suspended = self.coordinator.data.get("suspended")
+        return None if suspended is None else not suspended
+
+    async def _set_suspended(self, suspended: bool) -> None:
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_suspended, suspended
+            )
+        except Exception as err:
+            raise HomeAssistantError(f"Wallbox suspend/resume failed: {err}") from err
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self, **kwargs) -> None:
-        """Turn the switch on."""
-        client = self.coordinator.client
-        try:
-            await self.hass.async_add_executor_job(
-                client.write_register,
-                REG_START_STOP_CHARGING,
-                1,
-                unit=self.coordinator.slave_id,
-            )
-            await self.coordinator.async_request_refresh()
-        except Exception as e:
-            _LOGGER.error(f"Error turning on charging: {e}")
+        """Resume charging."""
+        await self._set_suspended(False)
 
     async def async_turn_off(self, **kwargs) -> None:
-        """Turn the switch off."""
-        client = self.coordinator.client
-        try:
-            await self.hass.async_add_executor_job(
-                client.write_register,
-                REG_START_STOP_CHARGING,
-                0,
-                unit=self.coordinator.slave_id,
-            )
-            await self.coordinator.async_request_refresh()
-        except Exception as e:
-            _LOGGER.error(f"Error turning off charging: {e}")
+        """Suspend charging."""
+        await self._set_suspended(True)

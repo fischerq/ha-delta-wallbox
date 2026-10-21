@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import patch
 
@@ -54,10 +53,7 @@ async def test_config_flow_user_step(hass: HomeAssistant):
         CONF_PORT: MOCK_PORT,
         CONF_SLAVE_ID: MOCK_SLAVE_ID,
     }
-    assert (
-        result2["result"].unique_id
-        == f"{MOCK_IP_ADDRESS}-{MOCK_SLAVE_ID}"
-    )
+    assert result2["result"].unique_id == f"{MOCK_IP_ADDRESS}-{MOCK_SLAVE_ID}"
 
 
 async def test_config_flow_already_configured(hass: HomeAssistant):

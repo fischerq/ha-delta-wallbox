@@ -1,27 +1,29 @@
-"""Tests for the Delta Wallbox integration."""
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+"""End-to-end tests: real config entry, real platforms, fake Modbus."""
 
+from unittest.mock import patch
+
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.delta_wallbox import (
-    async_setup_entry,
-    async_unload_entry,
-    PLATFORMS,
-)
+from custom_components.delta_wallbox.client import DeltaWallboxClient
 from custom_components.delta_wallbox.const import DOMAIN
 
-from tests.const import MOCK_IP_ADDRESS, MOCK_PORT, MOCK_SLAVE_ID
-
-from tests.common import MockConfigEntry
+from .const import MOCK_IP_ADDRESS, MOCK_PORT, MOCK_SLAVE_ID
+from .fake_modbus import FakeModbus, charging_scenario
 
 
 @pytest.fixture
-def mock_config_entry() -> MockConfigEntry:
-    """Mock a config entry."""
-    return MockConfigEntry(
+def fake():
+    f = FakeModbus()
+    charging_scenario(f)
+    return f
+
+
+@pytest.fixture
+async def entry(hass: HomeAssistant, fake):
+    entry = MockConfigEntry(
         domain=DOMAIN,
         data={
             "ip_address": MOCK_IP_ADDRESS,
@@ -29,87 +31,92 @@ def mock_config_entry() -> MockConfigEntry:
             "slave_id": MOCK_SLAVE_ID,
         },
     )
+    entry.add_to_hass(hass)
 
+    def make_client(host, port, device_id):
+        return DeltaWallboxClient(host, port, device_id, client=fake)
 
-@patch("custom_components.delta_wallbox.ModbusTcpClient")
-@patch("custom_components.delta_wallbox.DeltaWallboxDataUpdateCoordinator")
-async def test_async_setup_entry(
-    mock_coordinator, mock_client, hass: HomeAssistant, mock_config_entry: MockConfigEntry
-):
-    """Test a successful setup entry."""
-    # Setup the mock coordinator
-    mock_coord_instance = mock_coordinator.return_value
-    mock_coord_instance.last_update_success = True
-    mock_coord_instance.async_config_entry_first_refresh = AsyncMock()
-
-    # Link the config entry to hass
-    mock_config_entry.add_to_hass(hass)
-
-    with patch.object(
-        hass.config_entries, "async_forward_entry_setups"
-    ) as mock_forward_setup:
-        assert await async_setup_entry(hass, mock_config_entry)
+    with patch(
+        "custom_components.delta_wallbox.DeltaWallboxClient", side_effect=make_client
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
+    return entry
 
-    # Verify client and coordinator were initialized correctly
-    mock_client.assert_called_once_with(MOCK_IP_ADDRESS, port=MOCK_PORT)
-    mock_coordinator.assert_called_once_with(
-        hass, client=mock_client.return_value, slave_id=MOCK_SLAVE_ID
+
+def entity_id(hass, domain, key):
+    from homeassistant.helpers import entity_registry as er
+
+    return er.async_get(hass).async_get_entity_id(
+        domain, DOMAIN, f"{MOCK_SLAVE_ID}_{key}"
     )
 
-    # Verify coordinator is stored
-    assert hass.data[DOMAIN][mock_config_entry.entry_id] == mock_coord_instance
 
-    # Verify we refreshed the coordinator
-    mock_coord_instance.async_config_entry_first_refresh.assert_awaited_once()
-
-    # Verify platforms are being set up
-    mock_forward_setup.assert_called_once_with(mock_config_entry, PLATFORMS)
-
-
-@patch("custom_components.delta_wallbox.ModbusTcpClient")
-@patch("custom_components.delta_wallbox.DeltaWallboxDataUpdateCoordinator")
-async def test_setup_entry_not_ready(
-    mock_coordinator, mock_client, hass: HomeAssistant, mock_config_entry: MockConfigEntry
-):
-    """Test setup entry when the coordinator fails to refresh."""
-    # Setup the mock coordinator to fail the first refresh
-    mock_coord_instance = mock_coordinator.return_value
-    mock_coord_instance.last_update_success = False
-    mock_coord_instance.async_config_entry_first_refresh = AsyncMock(
-        side_effect=ConfigEntryNotReady
+async def test_setup_creates_entities_with_live_values(hass: HomeAssistant, entry):
+    assert entry.state is ConfigEntryState.LOADED
+    power = hass.states.get(entity_id(hass, "sensor", "charging_power"))
+    assert power.state == "7400"
+    assert power.attributes["unit_of_measurement"] == "W"
+    assert (
+        hass.states.get(entity_id(hass, "sensor", "charge_state")).state == "charging"
     )
-
-    mock_config_entry.add_to_hass(hass)
-
-    # Test for the exception
-    with pytest.raises(ConfigEntryNotReady):
-        await async_setup_entry(hass, mock_config_entry)
+    assert hass.states.get(entity_id(hass, "switch", "charging_enabled")).state == "on"
 
 
-async def test_async_unload_entry(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-):
-    """Test a successful unload entry."""
-    # Mock the coordinator and its client
-    mock_client = MagicMock()
-    mock_coordinator = MagicMock()
-    mock_coordinator.client = mock_client
+async def test_set_power_limit_writes_register_1600(hass: HomeAssistant, entry, fake):
+    eid = entity_id(hass, "number", "power_limit")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": eid, "value": 4200}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert (1600, [0, 4200]) in fake.writes
+    assert float(hass.states.get(eid).state) == 4200
 
-    # Pre-populate hass.data as if setup was successful
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
 
-    mock_config_entry.add_to_hass(hass)
+async def test_switch_off_suspends(hass: HomeAssistant, entry, fake):
+    eid = entity_id(hass, "switch", "charging_enabled")
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": eid}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert (1602, [1]) in fake.writes
+    assert hass.states.get(eid).state == "off"
 
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", return_value=True
-    ) as mock_forward_unload:
-        assert await async_unload_entry(hass, mock_config_entry)
+
+async def test_failed_write_raises(hass: HomeAssistant, entry, fake):
+    from homeassistant.exceptions import HomeAssistantError
+
+    fake.fail = True
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            "number",
+            "set_value",
+            {"entity_id": entity_id(hass, "number", "power_limit"), "value": 1000},
+            blocking=True,
+        )
+
+
+async def test_unload_closes_client(hass: HomeAssistant, entry, fake):
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert fake.closed
+
+
+async def test_device_offline_retries(hass: HomeAssistant):
+    offline = FakeModbus()
+    offline.fail = True
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": MOCK_IP_ADDRESS,
+            "port": MOCK_PORT,
+            "slave_id": MOCK_SLAVE_ID,
+        },
+    )
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.delta_wallbox.DeltaWallboxClient",
+        side_effect=lambda h, p, d: DeltaWallboxClient(h, p, d, client=offline),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-
-    # Verify platforms were unloaded
-    mock_forward_unload.assert_called_once_with(mock_config_entry, PLATFORMS)
-
-    # Verify client was closed and data was popped
-    assert not hass.data[DOMAIN]
+    assert entry.state is ConfigEntryState.SETUP_RETRY
